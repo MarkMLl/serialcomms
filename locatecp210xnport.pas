@@ -1,6 +1,6 @@
 (* Lazarus+FPC 1.6.4+3.0.2 on Linux Lazarus+FPC 1.6.4+3.0.2 on Linux Lazarus+FP *)
 
-unit LocateCp210xPort;
+unit LocateCp210xNPort;
 
 (* Find one or more serial ports, either standalone converters or integrated    *)
 (* into an instrument (in this example a Mastech MS2115B), based on a Silicon   *)
@@ -21,8 +21,10 @@ uses
   could be branded with the device serial number (or model number etc.) as a
   one-time operation which would make it more reliable.
 *)
-function FindMs2115bPort(portScan: boolean= false): string;
+function FindContecPort(portScan: boolean= false): string;
 
+
+// TODO : Check applicability of comment
 
 implementation
 
@@ -36,7 +38,7 @@ uses
   could be branded with the device serial number (or model number etc.) as a
   one-time operation which would make it more reliable.
 *)
-function FindMs2115bPort(portScan: boolean= false): string;
+function FindContecPort(portScan: boolean= false): string;
 
 const
   descriptionTemplate: TPortDescription= (
@@ -46,8 +48,8 @@ const
                          busType: '';
                          driverName: 'usb-serial/drivers/cp210x';
                          manufacturer: 'Silicon Labs';
-                         product: 'CP2102 USB to UART Bridge Controller'; (* N suffix might *)
-                         serial: '0001'        (* indicate non-constant serial number. *)
+                         product: 'CP2102N USB to UART Bridge Controller'; (* N suffix might *)
+                         serial: ''        (* indicate non-constant serial number. *)
                        );
 
 begin

@@ -2,8 +2,11 @@
 
 unit LocateCh34xPort;
 
-(* Find a piece of test equipment (specifically, a Juntek JDS6600) with an      *)
-(* embedded Nanjing Qinheng Microelectronics Co (WCH) CH34x chip. MarkMLl.      *)
+(* Find one or more serial ports, either standalone converters or integrated    *)
+(* into an instrument (in this example a Juntek JDS6600), based on a Nanjing    *)
+(* Qinheng Microelectronics Co (WCH) CH34x. This is a specimen unit, and will   *)
+(* usually be replaced by something with a tighter description based on lsusb   *)
+(* etc. output.                                                 MarkMLl         *)
 
 {$mode objfpc}{$H+}
 
@@ -43,12 +46,13 @@ const
                          busType: '';
                          driverName: 'usb-serial/drivers/ch341';
                          manufacturer: '';
-                         product: 'USB Serial';
+//                         product: 'USB Serial';
+ product: 'USB2.0-Serial';
 //                         serial: '0001' "Which in your case you have not got"
                        );
 
 begin
-  result := FindPortByDescription(descriptionTemplate, portScan)
+  result := FindPortByDescription(descriptionTemplate)
 end { FindJds6600Port } ;
 
 

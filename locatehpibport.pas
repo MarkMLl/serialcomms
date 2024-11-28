@@ -2,9 +2,11 @@
 
 unit LocateHpibPort;
 
-(* Find a piece of test equipment (specifically, a Prologix or Fenrir HP-IB     *)
-(* interface) with an embedded PIC behaving like a CDC serial device.           *)
-(*                                                              MarkMLl.        *)
+(* Find one or more serial ports, either standalone converters or integrated    *)
+(* into an instrument (in this example a Prologix or Fenrir HP-IB interface),   *)
+(* based on a CDC serial devce. This is a specimen unit, and will usually be   *)
+(* replaced by something with a tighter description based on lsusb etc. output. *)
+(*                                                              MarkMLl         *)
 
 {$mode objfpc}{$H+}
 
@@ -44,7 +46,7 @@ const
                        {%H-});
 
 begin
-  result := FindPortByDescription(descriptionTemplate, portScan)
+  result := FindPortByDescription(descriptionTemplate)
 end { FindHpibPort } ;
 
 

@@ -26,6 +26,8 @@ const
   LargestSafeRead= $7fffffff;
 {$endif LINUX }
 
+var
+  LocatePortsDebug: boolean= false;
 
 (* Observe that for low-resolution clocks a local Second div 10 or div 100      *)
 (* quite simply won't work.                                                     *)
@@ -37,9 +39,9 @@ type
 *)
   TimerDescriptor= qword;
 
-(* A numbered list of ports is prepared at startup, or any time this is called
-  and no open port is specified. The list is cached as necessary and also
-  returned as a StringList, which should be freed by the caller.
+(* A numbered list of ports may be prepared at startup, or any time this is
+  called and no open port is specified. The list is cached as necessary and
+  also returned as a StringList, which should be freed by the caller.
 *)
 function ListPorts(currentPort: TSerialHandle= InvalidSerialHandle): TStringList;
 
@@ -78,12 +80,27 @@ type
                       baseName: string;   (* This field is mandatory, e.g. ttyS *)
                       idVendor: string;   (* Not tested if blank                *)
                       idProduct: string;  (* Not tested if blank                *)
-                      busType: string; // UNUSED (* Non-presence is ignored if blank   *)
+                      busType: string;    (* Non-presence is ignored if blank   *)
                       driverName: string; (* Non-presence is ignored if blank   *)
                       manufacturer: string; (* Non-presence is ignored if blank *)
                       product: string;    (* Non-presence is ignored if blank   *)
                       serial: string      (* Non-presence is ignored if blank   *)
                     end;
+
+{ TODO : Not sure whether the above "if blank" statements are still accurate. }
+
+const
+  Anything: TPortDescription= (
+            );
+
+  cachedidVendor= 0;
+  cachedidProduct= 1;
+  cachedBusType= 2;
+  cachedDriver= 3;
+  cachedManufacturer= 4;
+  cachedProduct= 5;
+  cachedSerial= 6;
+  cachedTop= cachedSerial;
 
 (* Assuming that the OS is Linux, walk the available serial ports looking for
   one with the described properties. Some types of serial device are used by
@@ -92,8 +109,12 @@ type
   FTDI chip it could be branded with the device serial number (or model number
   etc.) as a one-time operation which would make it more reliable.
 *)
-function FindPortByDescription(const description: TPortDescription;
-                                        portScan: boolean= false): string;
+function FindPortByDescription(const description: TPortDescription): string;
+
+(* Similar to FindPortByDescription(), but the result is a StringList containing
+  the names of all matching ports (the caller should free this).
+*)
+function FindPortsByDescription(const description: TPortDescription): TStringList;
 
 (*  Return true if a device addition or removal has been detected.
 
@@ -155,15 +176,6 @@ implementation
 uses
   StrUtils, BaseUnix, Termio, Regexpr, Netlink, Sockets;
 
-const
-  cachedidVendor= 0;
-  cachedidProduct= 1;
-  cachedDriver= 2;
-  cachedManufacturer= 3;
-  cachedProduct= 4;
-  cachedSerial= 5;
-  cachedTop= cachedSerial;
-
 var
   portsListCache: TStringList= nil;
 
@@ -178,8 +190,6 @@ var
 // of handling the initial population of e.g. a device selection combobox by
 // simulating a series of hotplug messages for suitable devices which already
 // existed at program startup.
-
-{ define DEBUGWRITEF }
 
 
 (* Read manufacturer name etc. This is a standard file operation handling data
@@ -225,22 +235,20 @@ begin
 end { fileOrDirectoryExists } ;
 
 
-procedure debugWriteF(fmt{%H- 5024 }: string; values{%H- 5024 }: array of const);
-
-// See FormatEx() in e.g. Borg-NG for possible enhancements.
+procedure debugWriteF(fmt: string; values: array of const);
 
 var
-  i{%H- 5025 }: integer;
+  i: integer;
 
 begin
-{$ifdef DEBUGWRITEF }
+  if not LocatePortsDebug then
+    exit;
   i := Pos('\n', fmt);
   if i > 0 then begin
     SetLength(fmt, i - 1);
     WriteLn(ErrOutput, Format(fmt, values))
   end else
     Write(ErrOutput, Format(fmt, values))
-{$endif DEBUGWRITEF }
 end { debugWriteF } ;
 
 
@@ -285,6 +293,25 @@ var
   candidate: string;
 
 
+  (* This is used when at the root of the tree in which we're interested, i.e.
+    /sys/devices. Return true is the name appears to correspond to a known bus,
+    to save time looking at stuff that isn't going to be useful.
+  *)
+  function knownBus(const name: string): boolean;
+
+  begin
+    result := false;
+    if Pos('pnp', name) = 1 then
+      exit(true);
+    if Pos('pci', name) = 1 then
+      exit(true);
+    if Pos('platform', name) = 1 then
+      exit(true)
+  end { knownBus } ;
+
+
+  (* Wrapper for the walk-test predicate, returning true if undefined.
+  *)
   function wtp2(const dir: string; const name: string; const content: string;
                         const extra: string; hint: integer= -1): boolean; inline;
 
@@ -309,6 +336,8 @@ begin
 
       repeat
         if searchRec.Name[1] = '.' then (* Always ignore . and .. completely    *)
+          continue;
+        if (dir = '/sys/devices/') and not knownBus(searchRec.Name) then
           continue;
 
 (* For everything in the directory, make sure it's a subdirectory and not a     *)
@@ -368,6 +397,9 @@ begin
 end { walkDirs } ;
 
 
+(********************************************************************************)
+
+
 (* Callback for TStringList.CustomSort(). Assume that the list contains
   name=value pairs, and order by value.
 *)
@@ -389,20 +421,19 @@ begin
 end { compareValues } ;
 
 
-(* A numbered list of ports is prepared at startup, or any time this is called
-  and no open port is specified. The list is cached as necessary and also
-  returned as a StringList, which should be freed by the caller.
+(* A numbered list of ports may be prepared at startup, or any time this is
+  called and no open port is specified. The list is cached as necessary and
+  also returned as a StringList, which should be freed by the caller.
+
+  WATCH IT: That is a shallow copy, using references to existing objects which
+  describe each port (themselves stringlists). The caller should not free those,
+  and should assume that they will become invalid the next time ListPorts() etc.
+  is called.
 *)
 function ListPorts(currentPort: TSerialHandle= InvalidSerialHandle): TStringList;
 
 (* This is lifted from a port I'm working on of some very old DOS/Windows code  *)
 (* implementing a proprietary protocol.                                         *)
-
-var
-  searchRec: TSearchRec;
-  majorList, minorList: TStringList;
-  r: TRegExpr;
-  i, j: integer;
 
 
   (* The parameter is a number, extract as implemented in the clib macros.
@@ -500,129 +531,166 @@ var
   end { blacklisted } ;
 
 
-begin
-  if currentPort <> InvalidSerialHandle then begin
+  (* Make a deep copy of an existing list.
+  *)
+  function existingList(): TStringList;
+
+  var
+    i: integer;
+
+  begin
     if portsListCache = nil then
       result := nil
     else begin
       result := TStringList.Create;
-      result.Assign(portsListCache)
-    end;
-    exit
-  end;
-  if portsListCache = nil then
-    portsListCache := TStringList.Create
-  else begin
-    for i := 0 to portsListCache.Count - 1 do
-      if portsListCache.Objects[i] <> nil then begin
-        Assert(portsListCache.Objects[i] is TStringList, 'Internal error: bad cached port list.');
-        TStringList(portsListCache.Objects[i]).Free
+
+(* Assign() is a shallow copy in that it copies the strings and references to   *)
+(* the corresponding objects resulting in there being no single place where the *)
+(* objects can be freed. Complete the job by making fresh copies of the objects *)
+(* (since in the current context we know what they represent), and setting the  *)
+(* result's OwnsObjects property.                                               *)
+
+      result.Assign(portsListCache);    (* Copies existing objects              *)
+      for i := 0 to result.Count - 1 do begin
+        result.Objects[i] := TStringList.Create;
+        TStringList(result.Objects[i]).Assign(TStringList(portsListCache.Objects[i]))
       end;
-    portsListCache.Clear
-  end;
-  majorList := TStringList.Create;
-  minorList := TStringList.Create;
-  r := TRegExpr.Create;
-  r.Expression := '(tty\D+)\d+';
-  try
+      result.OwnsObjects := true
+    end
+  end { existingList } ;
 
-(* Run through all devices named like /dev/tty[[:alpha:]]+[[:digit:]]+ checking *)
-(* that they're character-mode and not blacklisted and saving the major device  *)
-(* number; repeat for /dev/rfcomm0 etc. to accommodate the default naming       *)
-(* convention of Bluetooth-connected serial devices. The final result is a list *)
-(* of devices without appended digits, plus the associated major device number. *)
 
-    majorList.Sorted := true;
-    majorList.Duplicates := dupIgnore;
-    IF FindFirst('/dev/tty*', faSysFile{%H-}, searchRec) = 0 THEN
-      REPEAT
-        if r.Exec(searchRec.Name) and isChr('/dev/' + searchRec.Name) then
-          if not blacklisted('/dev/' + r.Match[1]) then
-            majorList.Add('/dev/' + r.Match[1] + '=' + IntToStr(major('/dev/' + searchRec.Name)))
-      UNTIL FindNext(searchRec) <> 0;
-    FindClose(searchRec);
-    r.Expression := '(rfcomm)\d+';
-    IF FindFirst('/dev/rfcomm*', faSysFile{%H-}, searchRec) = 0 THEN
-      REPEAT
-        if r.Exec(searchRec.Name) and isChr('/dev/' + searchRec.Name) then
-          if not blacklisted('/dev/' + r.Match[1]) then
-            majorList.Add('/dev/' + r.Match[1] + '=' + IntToStr(major('/dev/' + searchRec.Name)))
-      UNTIL FindNext(searchRec) <> 0;
-    FindClose(searchRec);
+  (* Create and copy a new list.
+  *)
+  function pristineList(): TStringList;
 
-(* Sort by major device number. Enumeration order might be determined by the    *)
-(* order that kernel modules are loaded, in practice it's probably best to make *)
-(* no assumption in which case the default Quicksort is probably appropriate.   *)
+  var
+    searchRec: TSearchRec;
+    majorList, minorList: TStringList;
+    r: TRegExpr;
+    i, j: integer;
 
-    majorList.Sorted := false;
-    majorList.CustomSort(@compareValues);
+  begin
+    if portsListCache = nil then
+      portsListCache := TStringList.Create
+    else begin
+      for i := 0 to portsListCache.Count - 1 do
+        if portsListCache.Objects[i] <> nil then begin
+          Assert(portsListCache.Objects[i] is TStringList, 'Internal error: bad cached port list.');
+          TStringList(portsListCache.Objects[i]).Free
+        end;
+      portsListCache.Clear
+    end;
+    majorList := TStringList.Create;
+    minorList := TStringList.Create;
+    r := TRegExpr.Create;
+    r.Expression := '(tty\D+)\d+';
+    try
 
-(* For each major device get the actually-available physical devices. This      *)
-(* assumes that udev or equivalent is being used to create devices dynamically, *)
-(* i.e. won't work with Linux kernels older than 2.6 (circa 2003), in fact it   *)
-(* doesn't even bother trying to check for statically-allocated systems since   *)
-(* this would end up in a minefield of heuristics looking at the age of the     *)
-(* kernel, whether it was possible to decide whether udev support was compiled  *)
-(* into the kernel, whether systemd or equivalent was running and so on: it's   *)
-(* quite simply not worth it for a change made 15 years ago particularly since  *)
-(* this code "fails safe" by possibly listing more devices than actually exist  *)
-(* rather than by hiding some which can't be opened as a result.                *)
+  (* Run through all devices named like /dev/tty[[:alpha:]]+[[:digit:]]+ checking *)
+  (* that they're character-mode and not blacklisted and saving the major device  *)
+  (* number; repeat for /dev/rfcomm0 etc. to accommodate the default naming       *)
+  (* convention of Bluetooth-connected serial devices. The final result is a list *)
+  (* of devices without appended digits, plus the associated major device number. *)
 
-    for i := 0 to majorList.Count - 1 do begin
-      minorList.Clear;
-      IF FindFirst(majorList.Names[i] + '*', faSysFile{%H-}, searchRec) = 0 THEN
+      majorList.Sorted := true;
+      majorList.Duplicates := dupIgnore;
+      IF FindFirst('/dev/tty*', faSysFile{%H-}, searchRec) = 0 THEN
         REPEAT
-          minorList.Add('/dev/' + searchRec.Name + '=' + IntToStr(minor('/dev/' + searchRec.Name)))
+          if r.Exec(searchRec.Name) and isChr('/dev/' + searchRec.Name) then
+            if not blacklisted('/dev/' + r.Match[1]) then
+              majorList.Add('/dev/' + r.Match[1] + '=' + IntToStr(major('/dev/' + searchRec.Name)))
+        UNTIL FindNext(searchRec) <> 0;
+      FindClose(searchRec);
+      r.Expression := '(rfcomm)\d+';
+      IF FindFirst('/dev/rfcomm*', faSysFile{%H-}, searchRec) = 0 THEN
+        REPEAT
+          if r.Exec(searchRec.Name) and isChr('/dev/' + searchRec.Name) then
+            if not blacklisted('/dev/' + r.Match[1]) then
+              majorList.Add('/dev/' + r.Match[1] + '=' + IntToStr(major('/dev/' + searchRec.Name)))
         UNTIL FindNext(searchRec) <> 0;
       FindClose(searchRec);
 
-(* In the context of the current major device, sort by minor device number. The *)
-(* enumeration order might be reversed, which suggests that something like a    *)
-(* comb sort would be appropriate; however this can't be relied on so again use *)
-(* the default Quicksort.                                                       *)
+  (* Sort by major device number. Enumeration order might be determined by the    *)
+  (* order that kernel modules are loaded, in practice it's probably best to make *)
+  (* no assumption in which case the default Quicksort is probably appropriate.   *)
 
-      minorList.CustomSort(@compareValues);
+      majorList.Sorted := false;
+      majorList.CustomSort(@compareValues);
 
-(* Discarding major and minor device number, append the name to the cache.      *)
+  (* For each major device get the actually-available physical devices. This      *)
+  (* assumes that udev or equivalent is being used to create devices dynamically, *)
+  (* i.e. won't work with Linux kernels older than 2.6 (circa 2003), in fact it   *)
+  (* doesn't even bother trying to check for statically-allocated systems since   *)
+  (* this would end up in a minefield of heuristics looking at the age of the     *)
+  (* kernel, whether it was possible to decide whether udev support was compiled  *)
+  (* into the kernel, whether systemd or equivalent was running and so on: it's   *)
+  (* quite simply not worth it for a change made 15 years ago particularly since  *)
+  (* this code "fails safe" by possibly listing more devices than actually exist  *)
+  (* rather than by hiding some which can't be opened as a result.                *)
 
-      for j := 0 to MinorList.Count - 1 do
-        portsListCache.Append(minorList.Names[j])
+      for i := 0 to majorList.Count - 1 do begin
+        minorList.Clear;
+        IF FindFirst(majorList.Names[i] + '*', faSysFile{%H-}, searchRec) = 0 THEN
+          REPEAT
+            minorList.Add('/dev/' + searchRec.Name + '=' + IntToStr(minor('/dev/' + searchRec.Name)))
+          UNTIL FindNext(searchRec) <> 0;
+        FindClose(searchRec);
+
+  (* In the context of the current major device, sort by minor device number. The *)
+  (* enumeration order might be reversed, which suggests that something like a    *)
+  (* comb sort would be appropriate; however this can't be relied on so again use *)
+  (* the default Quicksort.                                                       *)
+
+        minorList.CustomSort(@compareValues);
+
+  (* Discarding major and minor device number, append the name to the cache.      *)
+
+        for j := 0 to MinorList.Count - 1 do
+          portsListCache.Append(minorList.Names[j])
+      end;
+
+  (* The cached result should first have traditional serial devices /dev/ttySx,   *)
+  (* ISDN devices /dev/ttyIx, USB devices /dev/ttyUSBx with additional support    *)
+  (* for devices implemented by multiport cards etc. inserted as appropriate      *)
+  (* based on the major device numbers which were allocated approximately         *)
+  (* chronologically. It should also have any "Low-density serial ports" found    *)
+  (* to be present, hopefully at the end of the list, where those are e.g. on-    *)
+  (* chip console ports and are distinguished by minor rather than major device   *)
+  (* number:                                                                      *)
+  (*                                                                              *)
+  (*   4 /dev/ttySx                                                               *)
+  (*  43 /dev/ttyIx                                                               *)
+  (* 188 /dev/ttyUSBx                                                             *)
+  (* 204 /dev/ttyAMAx (undocumented Raspberry Pi serial console port) etc.        *)
+  (*                                                                              *)
+  (* The overall result will hopefully be "correct" both from the system and user *)
+  (* POV. See Documentation/devices.txt or Documentation/admin-guide/devices.txt  *)
+  (* in the Linux source tree.                                                    *)
+
+    finally
+      r.Free;
+      minorList.Free;
+      majorList.Free
     end;
 
-(* The cached result should first have traditional serial devices /dev/ttySx,   *)
-(* ISDN devices /dev/ttyIx, USB devices /dev/ttyUSBx with additional support    *)
-(* for devices implemented by multiport cards etc. inserted as appropriate      *)
-(* based on the major device numbers which were allocated approximately         *)
-(* chronologically. It should also have any "Low-density serial ports" found    *)
-(* to be present, hopefully at the end of the list, where those are e.g. on-    *)
-(* chip console ports and are distinguished by minor rather than major device   *)
-(* number:                                                                      *)
-(*                                                                              *)
-(*   4 /dev/ttySx                                                               *)
-(*  43 /dev/ttyIx                                                               *)
-(* 188 /dev/ttyUSBx                                                             *)
-(* 204 /dev/ttyAMAx (undocumented Raspberry Pi serial console port) etc.        *)
-(*                                                                              *)
-(* The overall result will hopefully be "correct" both from the system and user *)
-(* POV. See Documentation/devices.txt or Documentation/admin-guide/devices.txt  *)
-(* in the Linux source tree.                                                    *)
+  (* Add extra storage to the cache so that as we're checking the ports we can    *)
+  (* accumulate driver names etc.                                                 *)
 
-  finally
-    r.Free;
-    minorList.Free;
-    majorList.Free
-  end;
+    for i := 0 to portsListCache.Count - 1 do begin
+      portsListCache.Objects[i] := TStringList.Create;
+      for j := 0 to CachedTop do
+        TStringList(portsListCache.Objects[i]).Append('')
+    end;
+    result := existingList()
+  end { pristineList } ;
 
-(* Add extra storage to the cache so that as we're checking the ports we can    *)
-(* accumulate driver names etc.                                                 *)
 
-  for i := 0 to portsListCache.Count - 1 do begin
-    portsListCache.Objects[i] := TStringList.Create;
-    for j := 0 to cachedTop do
-      TStringList(portsListCache.Objects[i]).Append('');
-  end;
-  result := TStringList.Create;
-  result.Assign(portsListCache)
+begin
+  if currentPort <> InvalidSerialHandle then
+    result := existingList()
+  else
+    result := pristineList()
 end { ListPorts } ;
 
 
@@ -639,13 +707,14 @@ begin
     if portsListCache.Objects[i] <> nil then begin
       Assert(portsListCache.Objects[i] is TStringList, 'Internal error: bad cached port list.');
       with TStringList(portsListCache.Objects[i]) do begin
-        Assert(Count = cachedTop + 1, 'Internal error: bad cached port list.');
-        WriteLn('  idVendor: ', Strings[cachedidVendor]);
-        WriteLn('  idProduct: ', Strings[cachedidProduct]);
-        WriteLn('  Driver: ', Strings[cachedDriver]);
-        WriteLn('  Manufacturer: ', Strings[cachedManufacturer]);
-        WriteLn('  Product: ', Strings[cachedProduct]);
-        WriteLn('  Serial: ', Strings[cachedSerial])
+        Assert(Count = CachedTop + 1, 'Internal error: bad cached port list.');
+        WriteLn('  idVendor: ', Strings[CachedidVendor]);
+        WriteLn('  idProduct: ', Strings[CachedidProduct]);
+        WriteLn('  BusType: ', Strings[CachedBusType]);
+        WriteLn('  Driver: ', Strings[CachedDriver]);
+        WriteLn('  Manufacturer: ', Strings[CachedManufacturer]);
+        WriteLn('  Product: ', Strings[CachedProduct]);
+        WriteLn('  Serial: ', Strings[CachedSerial])
       end
     end
   end;
@@ -653,8 +722,7 @@ begin
 end { DumpCachedPorts } ;
 
 
-var
-  assumeBlankIsWildcard: boolean= false;
+(********************************************************************************)
 
 
 (* This represents a hack that I'm not entirely happy about. Having found a
@@ -666,21 +734,46 @@ var
   things worse, it's not possible to simply use a deep search every time since
   that might pick up spurious USB hubs.
 *)
-function prefix(const device: string): string;
+function prefixPath(const device: string): string;
 
 begin
   if Pos('ttyACM', device) > 0 then
     result := '../../../'
   else
     result := '../../'
-end { prefix } ;
+end { prefixPath } ;
+
+
+(* The position of the driver symlink relative to the device name will vary
+  depending on the bus type. For the moment, I'm assuming that distinguishing
+  based on the device name is adequate.
+*)
+function driverPath(const device: string): string;
+
+begin
+  if Pos('ttyS', device) > 0 then
+    result := 'device/'
+  else
+    result := ''
+end { driverPath } ;
+
+
+(* Trim trailing * and ? characters.
+*)
+function trimWildcard(const name: string): string;
+
+begin
+  result := name;
+  while (result <> '') and (result[Length(result)] in ['*', '?']) do
+    SetLength(result, Length(result) - 1)
+end { trimWildcard } ;
 
 
 (* With the naming requirements met, make an additional final check that the
-  serial device has a plausible vendor ID.
+  serial device has a plausible vendor number.
 *)
 function testidVendor(const dir: string; const name: string; const content: string;
-                                                const extra: string; hint: integer= -1): boolean;
+                                                const extra: string; index: integer= -1): boolean;
 
 var
   scratch: string;
@@ -696,9 +789,9 @@ begin
     scratch := ''
   else
     scratch := cat(scratch);
-  if hint >= 0 then begin
-    Assert(portsListCache.Objects[hint] is TStringList, 'Internal error: bad cached port list.');
-    TStringList(portsListCache.Objects[hint])[cachedidVendor] := scratch
+  if index >= 0 then begin
+    Assert(portsListCache.Objects[index] is TStringList, 'Internal error: bad cached port list.');
+    TStringList(portsListCache.Objects[index])[CachedidVendor] := scratch
   end;
   result := extra = scratch
 end { testidVendor } ;
@@ -707,30 +800,27 @@ end { testidVendor } ;
 (* Return true if the device named in the form /dev/ttyUSBn has a plausible
   vendor number.
 *)
-function usingidVendor(const device, idVendor: string; hint: integer= -1): boolean;
+function usingidVendor(const device: string; const description: TPortDescription; index: integer= -1): boolean;
 
 var
-  name, path: string;
+  name, idVendor, path: string;
 
 begin
   result := false;
   name := ExtractFilename(device);
-  path := walkDirs('/sys/devices/', name, prefix(device) + 'idVendor', @testidVendor, idVendor, hint); (* Appends /  *)
-  if not assumeBlankIsWildcard then
-    result := path <> ''
-  else begin
-    result := (path <> '') or (idVendor = ''); (* Added for CDC_ACM device in Fenrir i/f *)
-    if result and (path = '') then
-      DebugWriteF('(Wildcarded, continuing)\n', [])
-  end
+  idVendor := description.idVendor;
+  path := walkDirs('/sys/devices/', name, prefixPath(device) + 'idVendor', @testidVendor, idVendor, index); (* Appends /  *)
+  result := (path <> '') or (idVendor = '');
+  if result and (path = '') then
+    DebugWriteF('(Wildcarded, continuing)\n', [])
 end { usingidVendor } ;
 
 
 (* With the naming requirements met, make an additional final check that the
-  serial device has a plausible product ID.
+  serial device has a plausible product number.
 *)
 function testidProduct(const dir: string; const name: string; const content: string;
-                                                const extra: string; hint: integer= -1): boolean;
+                                                const extra: string; index: integer= -1): boolean;
 
 var
   scratch: string;
@@ -746,9 +836,9 @@ begin
     scratch := ''
   else
     scratch := cat(scratch);
-  if hint >= 0 then begin
-    Assert(portsListCache.Objects[hint] is TStringList, 'Internal error: bad cached port list.');
-    TStringList(portsListCache.Objects[hint])[cachedidProduct] := scratch
+  if index >= 0 then begin
+    Assert(portsListCache.Objects[index] is TStringList, 'Internal error: bad cached port list.');
+    TStringList(portsListCache.Objects[index])[CachedidProduct] := scratch
   end;
   result := extra = scratch
 end { testidProduct } ;
@@ -757,30 +847,65 @@ end { testidProduct } ;
 (* Return true if the device named in the form /dev/ttyUSBn has a plausible
   vendor number.
 *)
-function usingidProduct(const device, idProduct: string; hint: integer= -1): boolean;
+function usingidProduct(const device: string; const description: TPortDescription; index: integer= -1): boolean;
 
 var
-  name, path: string;
+  name, idProduct, path: string;
 
 begin
   result := false;
   name := ExtractFilename(device);
-  path := walkDirs('/sys/devices/', name, prefix(device) + 'idProduct', @testidProduct, idProduct, hint); (* Appends /  *)
-  if not assumeBlankIsWildcard then
-    result := path <> ''
-  else begin
-    result := (path <> '') or (idProduct = ''); (* Added for CDC_ACM device in Fenrir i/f *)
-    if result and (path = '') then
-      DebugWriteF('(Wildcarded, continuing)\n', [])
-  end
+  idProduct := description.idProduct;
+  path := walkDirs('/sys/devices/', name, prefixPath(device) + 'idProduct', @testidProduct, idProduct, index); (* Appends /  *)
+  result := (path <> '') or (idProduct = '');
+  if result and (path = '') then
+    DebugWriteF('(Wildcarded, continuing)\n', [])
 end { usingidProduct } ;
+
+
+(* With the naming requirements met, make an additional final check that the
+  serial device has a plausible product ID.
+*)
+function testBus(const dir: string; const name: string; const content: string;
+                                                const extra: string; index: integer= -1): boolean;
+
+var
+  scratch: string;
+
+begin
+  scratch := trimWildcard(extra);
+  result := Pos('/sys/devices/' + scratch, dir) > 0;
+  if result and (index >= 0) then begin
+    Assert(portsListCache.Objects[index] is TStringList, 'Internal error: bad cached port list.');
+    TStringList(portsListCache.Objects[index])[CachedBustype] := scratch
+  end
+end { testBus } ;
+
+
+(* Return true if the device named in the form /dev/ttyUSBn appears on the
+  expected bus, noting that this might be wildcarded e.g. pnp* or pci*.
+*)
+function usingBus(const device: string; const description: TPortDescription; index: integer= -1): boolean;
+
+var
+  name, busType, path: string;
+
+begin
+  result := false;
+  name := ExtractFilename(device);
+  busType := description.busType;
+  path := walkDirs('/sys/devices/', name, '', @testBus, busType, index); (* Appends /  *)
+  result := (path <> '') or (busType = '');
+  if result and (path = '') then
+    DebugWriteF('(Wildcarded, continuing)\n', [])
+end { usingidBus } ;
 
 
 (* With the naming requirements met, make one final check that the serial
   device has a plausible description.
 *)
 function testDriver(const dir: string; const name: string; const content: string;
-                                                const extra: string; hint: integer= -1): boolean;
+                                                const extra: string; index: integer= -1): boolean;
 
 var
   scratch: string;
@@ -793,33 +918,36 @@ begin
 
   scratch := dir + name + '/' + content;
   scratch := fpReadLink(scratch);
-  if hint >= 0 then begin
-    Assert(portsListCache.Objects[hint] is TStringList, 'Internal error: bad cached port list.');
-    TStringList(portsListCache.Objects[hint])[cachedDriver] := ExtractFileName(scratch)
+  if index >= 0 then begin
+    Assert(portsListCache.Objects[index] is TStringList, 'Internal error: bad cached port list.');
+    TStringList(portsListCache.Objects[index])[CachedDriver] := ExtractFileName(scratch)
   end;
-  result := pos('/' + extra, scratch) > 0
+
+(* Append a marker to the strings we're comparing to force the match to be      *)
+(* exact. The particular case that spurred this was having to distinguish       *)
+(* drivers/serial and drivers/serial8250, while also preserving a partial path  *)
+(* provided by the pattern.                                                     *)
+
+  result := pos('/' + extra + '\', scratch + '\') > 0
 end { testDriver } ;
 
 
 (* Return true if the device named in the form /dev/ttyUSBn appears to be using
   a plausible device driver module.
 *)
-function usingDriver(const device, driver: string; hint: integer= -1): boolean;
+function usingDriver(const device: string; const description: TPortDescription; index: integer= -1): boolean;
 
 var
-  name, path: string;
+  name, driverName, path: string;
 
 begin
   result := false;
   name := ExtractFilename(device);
-  path := walkDirs('/sys/devices/', name, 'driver', @testDriver, driver, hint); (* Appends /  *)
-  if not assumeBlankIsWildcard then
-    result := path <> ''
-  else begin
-    result := (path <> '') or (driver = ''); (* Added for CDC_ACM device in Fenrir i/f *)
-    if result and (path = '') then
-      DebugWriteF('(Wildcarded, continuing)\n', [])
-  end
+  driverName := description.driverName;
+  path := walkDirs('/sys/devices/', name, driverPath(device) + 'driver', @testDriver, driverName, index); (* Appends /  *)
+  result := (path <> '') or (driverName = '');
+  if result and (path = '') then
+    DebugWriteF('(Wildcarded, continuing)\n', [])
 end { usingDriver } ;
 
 
@@ -827,7 +955,7 @@ end { usingDriver } ;
   device has a plausible description.
 *)
 function testManufacturer(const dir: string; const name: string; const content: string;
-                                                const extra: string; hint: integer= -1): boolean;
+                                                const extra: string; index: integer= -1): boolean;
 
 var
   scratch: string;
@@ -843,9 +971,9 @@ begin
     scratch := ''
   else
     scratch := LowerCase(DelSpace1(Trim(cat(scratch)))); (* Squash repeated spaces etc. *)
-  if hint >= 0 then begin
-    Assert(portsListCache.Objects[hint] is TStringList, 'Internal error: bad cached port list.');
-    TStringList(portsListCache.Objects[hint])[cachedManufacturer] := scratch
+  if index >= 0 then begin
+    Assert(portsListCache.Objects[index] is TStringList, 'Internal error: bad cached port list.');
+    TStringList(portsListCache.Objects[index])[CachedManufacturer] := scratch
   end;
   result := LowerCase(DelSpace1(Trim(extra))) = scratch  (* Squash repeated spaces etc. *)
 end { testManufacturer } ;
@@ -854,22 +982,19 @@ end { testManufacturer } ;
 (* Return true if the device named in the form /dev/ttyUSBn has a plausible
   Manufacturer description.
 *)
-function usingManufacturer(const device, manufacturer: string; hint: integer= -1): boolean;
+function usingManufacturer(const device: string; const description: TPortDescription; index: integer= -1): boolean;
 
 var
-  name, path: string;
+  name, manufacturer, path: string;
 
 begin
   result := false;
   name := ExtractFilename(device);
-  path := walkDirs('/sys/devices/', name, prefix(device) + 'manufacturer', @testManufacturer, manufacturer, hint); (* Appends /  *)
-  if not assumeBlankIsWildcard then
-    result := path <> ''
-  else begin
-    result := (path <> '') or (manufacturer = ''); (* Added for CDC_ACM device in Fenrir i/f *)
-    if result and (path = '') then
-      DebugWriteF('(Wildcarded, continuing)\n', [])
-  end
+  manufacturer := description.manufacturer;
+  path := walkDirs('/sys/devices/', name, prefixPath(device) + 'manufacturer', @testManufacturer, manufacturer, index); (* Appends /  *)
+  result := (path <> '') or (manufacturer = '');
+  if result and (path = '') then
+    DebugWriteF('(Wildcarded, continuing)\n', [])
 end { usingManufacturer } ;
 
 
@@ -877,7 +1002,7 @@ end { usingManufacturer } ;
   device has a plausible description.
 *)
 function testProduct(const dir: string; const name: string; const content: string;
-                                                const extra: string; hint: integer= -1): boolean;
+                                                const extra: string; index: integer= -1): boolean;
 
 var
   scratch: string;
@@ -893,9 +1018,9 @@ begin
     scratch := ''
   else
     scratch := LowerCase(DelSpace1(Trim(cat(scratch)))); (* Squash repeated spaces etc. *)
-  if hint >= 0 then begin
-    Assert(portsListCache.Objects[hint] is TStringList, 'Internal error: bad cached port list.');
-    TStringList(portsListCache.Objects[hint])[cachedProduct] := scratch
+  if index >= 0 then begin
+    Assert(portsListCache.Objects[index] is TStringList, 'Internal error: bad cached port list.');
+    TStringList(portsListCache.Objects[index])[CachedProduct] := scratch
   end;
   result := LowerCase(DelSpace1(Trim(extra))) = scratch  (* Squash repeated spaces etc. *)
 end { testProduct } ;
@@ -904,22 +1029,19 @@ end { testProduct } ;
 (* Return true if the device named in the form /dev/ttyUSBn has a plausible
   product description.
 *)
-function usingProduct(const device, product: string; hint: integer= -1): boolean;
+function usingProduct(const device: string; const description: TPortDescription; index: integer= -1): boolean;
 
 var
-  name, path: string;
+  name, product, path: string;
 
 begin
   result := false;
   name := ExtractFilename(device);
-  path := walkDirs('/sys/devices/', name, prefix(device) + 'product', @testProduct, product, hint); (* Appends /  *)
-  if not assumeBlankIsWildcard then
-    result := path <> ''
-  else begin
-    result := (path <> '') or (product = ''); (* Added for CDC_ACM device in Fenrir i/f *)
-    if result and (path = '') then
-      DebugWriteF('(Wildcarded, continuing)\n', [])
-  end
+  product := description.product;
+  path := walkDirs('/sys/devices/', name, prefixPath(device) + 'product', @testProduct, product, index); (* Appends /  *)
+  result := (path <> '') or (product = '');
+  if result and (path = '') then
+    DebugWriteF('(Wildcarded, continuing)\n', [])
 end { usingProduct } ;
 
 
@@ -927,7 +1049,7 @@ end { usingProduct } ;
   device has a plausible description.
 *)
 function testSerial(const dir: string; const name: string; const content: string;
-                                                const extra: string; hint: integer= -1): boolean;
+                                                const extra: string; index: integer= -1): boolean;
 
 var
   scratch: string;
@@ -943,9 +1065,9 @@ begin
     scratch := ''
   else
     scratch := cat(scratch);
-  if hint >= 0 then begin
-    Assert(portsListCache.Objects[hint] is TStringList, 'Internal error: bad cached port list.');
-    TStringList(portsListCache.Objects[hint])[cachedSerial] := scratch
+  if index >= 0 then begin
+    Assert(portsListCache.Objects[index] is TStringList, 'Internal error: bad cached port list.');
+    TStringList(portsListCache.Objects[index])[CachedSerial] := scratch
   end;
   result := extra = scratch
 end { testSerial } ;
@@ -954,23 +1076,23 @@ end { testSerial } ;
 (* Return true if the device named in the form /dev/ttyUSBn has a plausible
   serial number.
 *)
-function usingSerial(const device, serial: string; hint: integer= -1): boolean;
+function usingSerial(const device: string; const description: TPortDescription; index: integer= -1): boolean;
 
 var
-  name, path: string;
+  name, serial, path: string;
 
 begin
   result := false;
   name := ExtractFilename(device);
-  path := walkDirs('/sys/devices/', name, prefix(device) + 'serial', @testSerial, serial, hint); (* Appends /  *)
-  if not assumeBlankIsWildcard then
-    result := path <> ''
-  else begin
-    result := (path <> '') or (serial = ''); (* Added for CDC_ACM device in Fenrir i/f *)
-    if result and (path = '') then
-      DebugWriteF('(Wildcarded, continuing)\n', [])
-  end
+  serial := description.serial;
+  path := walkDirs('/sys/devices/', name, prefixPath(device) + 'serial', @testSerial, serial, index); (* Appends /  *)
+  result := (path <> '') or (serial = '');
+  if result and (path = '') then
+    DebugWriteF('(Wildcarded, continuing)\n', [])
 end { usingSerial } ;
+
+
+(********************************************************************************)
 
 
 (* We know what kind of serial device is in the attached instrument etc., so
@@ -979,7 +1101,7 @@ end { usingSerial } ;
   port (this was grafted on as an afterthought and could be done better).
 *)
 function selectAsDefault(const testPortName: string; const description: TPortDescription;
-                                        hint: integer= -1): boolean;
+                                                        index: integer): boolean;
 
 begin
   result := true;
@@ -993,53 +1115,22 @@ begin
 (* since it's internal to the device, and possibly continue by looking at the   *)
 (* product description and serial number.                                       *)
 
-(* This is the original implementation, it is fairly fast but since it doesn't  *)
-(* investigate every port in depth it doesn't accumulate serial numbers etc.    *)
-
-// It might be possible simply to assume that the usingXXX() functions "do the
-// right thing" allowing us to dispense with assumeBlankIsWildcard
-
-  if hint < 0 then begin
-    Assert(description.baseName <> '', 'Internal error: basename blank.');
-    DebugWriteF('Testing port %s against pattern %s\n', [testPortName, description.baseName]);
-    if Pos(description.baseName, testPortName) = 0 then
-      exit(false);
-    assumeBlankIsWildcard := false; // TODO : Can we lose this?
-    if description.idVendor <> '' then begin
-      DebugWriteF('Testing against vendor ID %s\n', [description.idVendor]);
-      if not usingidVendor(testPortName, description.idVendor, hint) then
-        exit(false)
-    end;
-    if description.idProduct <> '' then begin
-      DebugWriteF('Testing against product ID %s\n', [description.idProduct]);
-      if not usingidProduct(testPortName, description.idProduct, hint) then
-        exit(false)
-    end;
-
-    assumeBlankIsWildcard := true; // TODO : Can we lose this? // EXPERIMENTAL, MIGHT NOT WORK
-
-    DebugWriteF('Testing against driver name %s\n', [description.driverName]);
-    if not usingDriver(testPortName, description.driverName, hint) then
-      exit(false);
-    DebugWriteF('Testing against manufacturer description %s\n', [description.manufacturer]);
-    if not usingManufacturer(testPortName, description.manufacturer, hint) then
-      exit(false);
-    DebugWriteF('Testing against product description %s\n', [description.product]);
-    if not usingProduct(testPortName, description.product, hint) then
-      exit(false);
-    DebugWriteF('Testing against serial description %s\n', [description.serial]);
-    if not usingSerial(testPortName, description.serial, hint) then
-      exit(false)
-  end else begin
-    Assert(description.baseName <> '', 'Internal error: basename blank.');
-    result := Pos(description.basename, testPortName) > 0;
-    result := usingidVendor(testPortName, description.idVendor, hint) and result;
-    result := usingidProduct(testPortName, description.idProduct, hint) and result;
-    result := usingDriver(testPortName, description.driverName, hint) and result;
-    result := usingManufacturer(testPortName, description.manufacturer, hint) and result;
-    result := usingProduct(testPortName, description.product, hint) and result;
-    result := usingSerial(testPortName, description.serial, hint) and result
-  end;
+  Assert(description.baseName <> '', 'Internal error: basename blank.');
+  result := Pos(description.basename, testPortName) > 0;
+  result := usingBus(testPortName, description, index) and result;
+  result := usingDriver(testPortName, description, index) and result;
+  if result then
+    case trimWildcard(description.busType) of
+      'pci': ;
+      'pnp': ;
+      'platform': ;
+    otherwise
+      result := usingidVendor(testPortName, description, index) and result;
+      result := usingidProduct(testPortName, description, index) and result;
+      result := usingManufacturer(testPortName, description, index) and result;
+      result := usingProduct(testPortName, description, index) and result;
+      result := usingSerial(testPortName, description, index) and result
+    end
 
 (* If either there's no useful tests we can make or all tests have been         *)
 (* successful, return true. The result of this will be that either the first    *)
@@ -1056,8 +1147,7 @@ end { selectAsDefault } ;
   FTDI chip it could be branded with the device serial number (or model number
   etc.) as a one-time operation which would make it more reliable.
 *)
-function FindPortByDescription(const description: TPortDescription;
-                                        portScan: boolean= false): string;
+function FindPortByDescription(const description: TPortDescription): string;
 
 var
   i: integer;
@@ -1075,22 +1165,33 @@ begin
 (* Let's assume that because we're adding devices in sequence, that the most    *)
 (* recent that the OS has seen plugged in appears last. Select this as the      *)
 (* device to be used if it matches certain critera.                             *)
-(*                                                                              *)
-(* If the portScan parameter is not set then we don't waste (lots of) time      *)
-(* scanning device descriptions in the /sys tree.                               *)
 
-      if not portScan then
-        if selectAsDefault(portnames[i], description) then
-          result := portnames[i]
-        else begin end
-      else
-        if selectAsDefault(portnames[i], description, i) then
-          result := portnames[i]
+      if selectAsDefault(portnames[i], description, i) then
+        result := portnames[i]
     end
   finally
     FreeAndNil(portNames)
   end
 end { FindPortByDescription } ;
+
+
+(* Similar to FindPortByDescription(), but the result is a StringList containing
+  the names of all matching ports (the caller should free this).
+*)
+function FindPortsByDescription(const description: TPortDescription): TStringList;
+
+var
+  i: integer;
+
+begin
+  result :=  ListPorts();
+  for i := result.Count - 1 downto 0 do
+    if not selectAsDefault(result[i], description, i) then
+      result.Delete(i)
+end { FindPortsByDescription } ;
+
+
+(********************************************************************************)
 
 
 const
@@ -1277,13 +1378,12 @@ end { PollHotplugEvents } ;
 *)
 function PollHotplugEvents(): boolean;
 
-const
-  anything: TPortDescription= (
-            );
-
 begin
-  result := PollHotplugEvents(anything)
+  result := PollHotplugEvents(Anything)
 end { PollHotplugEvents } ;
+
+
+(********************************************************************************)
 
 
 (* Return the number of bytes buffered for reception by the operating system,
@@ -1299,7 +1399,7 @@ begin
   else begin
     result := defaultResult;            (* So we can see what bits get changed  *)
 
-// WATCH IT: there might be a limit of e.g. 4K (0..4096) on this.
+// WATCH IT: there might be a limit of e.g. 4K (0..4095) on this.
 
     if fpIoctl(handle, FIONREAD, @result) <> 0 then
       result := -1
@@ -1320,7 +1420,7 @@ begin
   else begin
     result := defaultResult;            (* So we can see what bits get changed  *)
 
-// WATCH IT: there might be a limit of e.g. 4K (0..4096) on this.
+// WATCH IT: there might be a limit of e.g. 4K (0..4095) on this.
 
     if fpIoctl(handle, FIONREAD, @result) <> 0 then
       result := -1

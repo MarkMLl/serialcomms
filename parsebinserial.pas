@@ -13,6 +13,10 @@ unit ParseBinSerial;
 (* unit, or that multiple serial lines can be handled simultaneously unless     *)
 (* isolated in individual threads.                              MarkMLl.        *)
 
+// TODO : Consider implementing floats.
+// TODO : Am I crazy enough to support LEB128, up to at least 64 bits?
+// See https://blog.timhutt.co.uk/fst_spec/
+
 // TODO : Needs provision for CRC accumulation and backtrack.
 // In order to implement backtracking this will need a buffer of either the
 // "lost" (eight?) bits per incoming byte or the accumulated CRC values between

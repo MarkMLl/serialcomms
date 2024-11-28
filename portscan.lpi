@@ -1,0 +1,131 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CONFIG>
+  <ProjectOptions>
+    <Version Value="12"/>
+    <General>
+      <Flags>
+        <MainUnitHasCreateFormStatements Value="False"/>
+        <MainUnitHasTitleStatement Value="False"/>
+        <MainUnitHasScaledStatement Value="False"/>
+      </Flags>
+      <SessionStorage Value="InProjectDir"/>
+      <Title Value="portscan"/>
+      <UseAppBundle Value="False"/>
+      <ResourceType Value="res"/>
+    </General>
+    <BuildModes>
+      <Item Name="Default" Default="True"/>
+    </BuildModes>
+    <PublishOptions>
+      <Version Value="2"/>
+      <UseFileFilters Value="True"/>
+    </PublishOptions>
+    <RunParams>
+      <FormatVersion Value="2"/>
+    </RunParams>
+    <Units>
+      <Unit>
+        <Filename Value="portscan.lpr"/>
+        <IsPartOfProject Value="True"/>
+      </Unit>
+      <Unit>
+        <Filename Value="locatehpibport.pas"/>
+        <IsPartOfProject Value="True"/>
+        <UnitName Value="LocateHpibPort"/>
+      </Unit>
+      <Unit>
+        <Filename Value="locatecdcacmport.pas"/>
+        <IsPartOfProject Value="True"/>
+        <UnitName Value="LocateCdcAcmPort"/>
+      </Unit>
+      <Unit>
+        <Filename Value="locate16550port.pas"/>
+        <IsPartOfProject Value="True"/>
+      </Unit>
+      <Unit>
+        <Filename Value="locateftdiport.pas"/>
+        <IsPartOfProject Value="True"/>
+        <UnitName Value="LocateFtdiPort"/>
+      </Unit>
+      <Unit>
+        <Filename Value="locatech34xport.pas"/>
+        <IsPartOfProject Value="True"/>
+        <UnitName Value="LocateCh34xPort"/>
+      </Unit>
+      <Unit>
+        <Filename Value="locatecp210xport.pas"/>
+        <IsPartOfProject Value="True"/>
+        <UnitName Value="LocateCp210xPort"/>
+      </Unit>
+      <Unit>
+        <Filename Value="locatecp210xnport.pas"/>
+        <IsPartOfProject Value="True"/>
+        <UnitName Value="LocateCp210xNPort"/>
+      </Unit>
+      <Unit>
+        <Filename Value="locatepl2303port.pas"/>
+        <IsPartOfProject Value="True"/>
+        <UnitName Value="LocatePl2303Port"/>
+      </Unit>
+      <Unit>
+        <Filename Value="locateubloxport.pas"/>
+        <IsPartOfProject Value="True"/>
+        <UnitName Value="LocateUbloxPort"/>
+      </Unit>
+      <Unit>
+        <Filename Value="locateports.pas"/>
+        <IsPartOfProject Value="True"/>
+        <UnitName Value="LocatePorts"/>
+      </Unit>
+    </Units>
+  </ProjectOptions>
+  <CompilerOptions>
+    <Version Value="11"/>
+    <Target>
+      <Filename Value="portscan-$(TargetCPU)-$(TargetOS)"/>
+    </Target>
+    <SearchPaths>
+      <IncludeFiles Value="$(ProjOutDir)"/>
+      <UnitOutputDirectory Value="lib/$(TargetCPU)-$(TargetOS)"/>
+    </SearchPaths>
+    <Parsing>
+      <SyntaxOptions>
+        <IncludeAssertionCode Value="True"/>
+      </SyntaxOptions>
+    </Parsing>
+    <CodeGeneration>
+      <Checks>
+        <IOChecks Value="True"/>
+        <RangeChecks Value="True"/>
+        <OverflowChecks Value="True"/>
+        <StackChecks Value="True"/>
+      </Checks>
+      <VerifyObjMethodCallValidity Value="True"/>
+    </CodeGeneration>
+    <Linking>
+      <Debugging>
+        <DebugInfoType Value="dsDwarf2Set"/>
+      </Debugging>
+    </Linking>
+    <Other>
+      <CustomOptions Value="-dDEBUGWRITEF"/>
+      <ExecuteAfter>
+        <Command Value="date"/>
+        <CompileReasons Run="False"/>
+      </ExecuteAfter>
+    </Other>
+  </CompilerOptions>
+  <Debugging>
+    <Exceptions>
+      <Item>
+        <Name Value="EAbort"/>
+      </Item>
+      <Item>
+        <Name Value="ECodetoolError"/>
+      </Item>
+      <Item>
+        <Name Value="EFOpenError"/>
+      </Item>
+    </Exceptions>
+  </Debugging>
+</CONFIG>

@@ -2,8 +2,15 @@
 
 unit LocateFtdiPort;
 
-(* Find a piece of test equipment interfaced via an (often counterfeit) FTDI    *)
-(* chip.                                                        MarkMLl         *)
+(* Find one or more serial ports, either standalone converters or integrated    *)
+(* into an instrument, based on a FTDI chip (in practice this will usually be a *)
+(* counterfeit). This is a specimen unit, and will usually be replaced by       *)
+(* something with a tighter description based on lsusb etc. output.             *)
+(*                                                                              *)
+(* If it were a genuine FTDI chip it could be branded with the device serial    *)
+(* number (or model number etc.) as a one-time operation which would make       *)
+(* detection more reliable, but most "clones" appear to have disabled this      *)
+(* facility after FTDI's assertive actions of 2014.             MarkMLl         *)
 
 {$mode objfpc}{$H+}
 
@@ -54,7 +61,7 @@ begin
   description := descriptionTemplate;
   if serialNumber <> '' then
     description.serial := serialNumber;
-  result := FindPortByDescription(description, portScan)
+  result := FindPortByDescription(description)
 end { FindFtdiPort } ;
 
 

@@ -2,8 +2,10 @@
 
 unit LocateCdcAcmPort;
 
-(* Find a piece of test equipment (specifically, a Fenrir HP-IB interface) with *)
-(* an embedded PIC behaving like a CDC serial device.           MarkMLl.        *)
+(* Find one or more serial ports, either standalone converters or integrated    *)
+(* into an instrument, based on the USB serial class. This is a specimen unit,  *)
+(* and will usually be replaced by something with a tighter description based   *)
+(* on lsusb etc. output.                                        MarkMLl         *)
 
 {$mode objfpc}{$H+}
 
@@ -13,12 +15,13 @@ uses
   Classes, SysUtils;
 
 (* Assuming that the OS is Linux, walk the available serial ports looking for
-  a PIC acting as a CDC serial device. Note that this is also used by many other
-  embedded controllers including some Arduinos so it's not entirely foolproof...
-  if it were an FTDI chip it could be branded with the device serial number (or
-  model number etc.) as a one-time operation which would make it more reliable.
+  a PIC etc. acting as a CDC serial device. Note that this is also used by many
+  other embedded controllers including some Arduinos so it's not entirely
+  foolproof... if it were an FTDI chip it could be branded with the device
+  serial number (or model number etc.) as a one-time operation which would make
+  it more reliable.
 *)
-function FindFenrirPort(portScan: boolean= false): string;
+function FindCdcPort(portScan: boolean= false): string;
 
 
 implementation
@@ -28,12 +31,13 @@ uses
 
 
 (* Assuming that the OS is Linux, walk the available serial ports looking for
-  a PIC acting as a CDC serial device. Note that this is also used by many other
-  embedded controllers including some Arduinos so it's not entirely foolproof...
-  if it were an FTDI chip it could be branded with the device serial number (or
-  model number etc.) as a one-time operation which would make it more reliable.
+  a PIC etc. acting as a CDC serial device. Note that this is also used by many
+  other embedded controllers including some Arduinos so it's not entirely
+  foolproof... if it were an FTDI chip it could be branded with the device
+  serial number (or model number etc.) as a one-time operation which would make
+  it more reliable.
 *)
-function FindFenrirPort(portScan: boolean= false): string;
+function FindCdcPort(portScan: boolean= false): string;
 
 const
   descriptionTemplate: TPortDescription= (
@@ -43,8 +47,8 @@ const
                        {%H-});
 
 begin
-  result := FindPortByDescription(descriptionTemplate, portScan)
-end { FindFenrirPort } ;
+  result := FindPortByDescription(descriptionTemplate)
+end { FindCdcPort } ;
 
 
 end.
