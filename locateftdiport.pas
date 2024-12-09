@@ -27,20 +27,16 @@ uses
 *)
 function FindFtdiPort(serialNumber: string= ''; portScan: boolean= false): string;
 
+(* Similar to FindFtdiPort() but returns all ports (rather than just one) as a
+  comma-separated list.
+*)
+function FindFtdiPorts(serialNumber: string= ''; portScan: boolean= false): string;
+
 
 implementation
 
 uses
   LocatePorts;
-
-
-(* Assuming that the OS is Linux, walk the available serial ports looking for
-  a (counterfeit) FTDI chip. If it were a genuine FTDI chip it could be branded
-  with the device serial number (or model number etc.) as a one-time operation
-  which would make it more reliable, but most "clones" appear to have disabled
-  this facility after FTDI's assertive actions of 2014.
-*)
-function FindFtdiPort(serialNumber: string= ''; portScan: boolean= false): string;
 
 const
   descriptionTemplate: TPortDescription= (
@@ -54,6 +50,15 @@ const
                          serial: 'A50285BI' (* Common in counterfeit R/O EEPROM *)
                        );
 
+
+(* Assuming that the OS is Linux, walk the available serial ports looking for
+  a (counterfeit) FTDI chip. If it were a genuine FTDI chip it could be branded
+  with the device serial number (or model number etc.) as a one-time operation
+  which would make it more reliable, but most "clones" appear to have disabled
+  this facility after FTDI's assertive actions of 2014.
+*)
+function FindFtdiPort(serialNumber: string= ''; portScan: boolean= false): string;
+
 var
   description: TPortDescription;
 
@@ -63,6 +68,25 @@ begin
     description.serial := serialNumber;
   result := FindPortByDescription(description)
 end { FindFtdiPort } ;
+
+
+(* Similar to FindFtdiPort() but returns all ports (rather than just one) as a
+  comma-separated list.
+*)
+function FindFtdiPorts(serialNumber: string= ''; portScan: boolean= false): string;
+
+var
+  description: TPortDescription;
+
+begin
+  description := descriptionTemplate;
+  if serialNumber <> '' then
+    description.serial := serialNumber;
+  with FindPortsByDescription(description) do begin
+    result := CommaText;
+    Free
+  end
+end { FindFtdiPorts } ;
 
 
 end.

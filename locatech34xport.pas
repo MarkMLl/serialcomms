@@ -23,20 +23,16 @@ uses
 *)
 function FindJds6600Port(portScan: boolean= false): string;
 
+(* Similar to FindJds6600Port() but returns all ports (rather than just one) as a
+  comma-separated list.
+*)
+function FindJds6600Ports(portScan: boolean= false): string;
+
 
 implementation
 
 uses
   LocatePorts;
-
-
-(* Assuming that the OS is Linux, walk the available serial ports looking for
-  a CH34x which is what's in the Juntek JDS6600. Note that this is not entirely
-  foolproof... if it were an FTDI chip it could be branded with the device
-  serial number (or model number etc.) as a one-time operation which would make
-  it more reliable.
-*)
-function FindJds6600Port(portScan: boolean= false): string;
 
 const
   descriptionTemplate: TPortDescription= (
@@ -51,9 +47,31 @@ const
 //                         serial: '0001' "Which in your case you have not got"
                        );
 
+
+(* Assuming that the OS is Linux, walk the available serial ports looking for
+  a CH34x which is what's in the Juntek JDS6600. Note that this is not entirely
+  foolproof... if it were an FTDI chip it could be branded with the device
+  serial number (or model number etc.) as a one-time operation which would make
+  it more reliable.
+*)
+function FindJds6600Port(portScan: boolean= false): string;
+
 begin
   result := FindPortByDescription(descriptionTemplate)
 end { FindJds6600Port } ;
+
+
+(* Similar to FindJds6600Port() but returns all ports (rather than just one) as a
+  comma-separated list.
+*)
+function FindJds6600Ports(portScan: boolean= false): string;
+
+begin
+  with FindPortsByDescription(descriptionTemplate) do begin
+    result := CommaText;
+    Free
+  end
+end { FindJds6600Ports } ;
 
 
 end.

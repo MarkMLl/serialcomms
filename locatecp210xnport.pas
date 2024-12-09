@@ -23,22 +23,19 @@ uses
 *)
 function FindContecPort(portScan: boolean= false): string;
 
-
 // TODO : Check applicability of comment
+
+(* Similar to FindContecPort() but returns all ports (rather than just one) as a
+  comma-separated list.
+*)
+function FindContecPorts(portScan: boolean= false): string;
+
 
 implementation
 
 uses
   LocatePorts;
 
-
-(* Assuming that the OS is Linux, walk the available serial ports looking for
-  a CP210x which is what's in the Mastech 2115B. Note that this is also used by
-  the DSO112A, so it's not entirely foolproof... if it were an FTDI chip it
-  could be branded with the device serial number (or model number etc.) as a
-  one-time operation which would make it more reliable.
-*)
-function FindContecPort(portScan: boolean= false): string;
 
 const
   descriptionTemplate: TPortDescription= (
@@ -52,9 +49,31 @@ const
                          serial: ''        (* indicate non-constant serial number. *)
                        );
 
+
+(* Assuming that the OS is Linux, walk the available serial ports looking for
+  a CP210x which is what's in the Mastech 2115B. Note that this is also used by
+  the DSO112A, so it's not entirely foolproof... if it were an FTDI chip it
+  could be branded with the device serial number (or model number etc.) as a
+  one-time operation which would make it more reliable.
+*)
+function FindContecPort(portScan: boolean= false): string;
+
 begin
   result := FindPortByDescription(descriptionTemplate)
-end { FindMs2115bPort } ;
+end { FindContecPort } ;
+
+
+(* Similar to FindContecPort() but returns all ports (rather than just one) as a
+  comma-separated list.
+*)
+function FindContecPorts(portScan: boolean= false): string;
+
+begin
+  with FindPortsByDescription(descriptionTemplate) do begin
+    result := CommaText;
+    Free
+  end
+end { FindContecPorts } ;
 
 
 end.

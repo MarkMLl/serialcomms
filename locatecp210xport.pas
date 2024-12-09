@@ -23,20 +23,17 @@ uses
 *)
 function FindMs2115bPort(portScan: boolean= false): string;
 
+(* Similar to FindMs2115bPort() but returns all ports (rather than just one) as a
+  comma-separated list.
+*)
+function FindMs2115bPorts(portScan: boolean= false): string;
+
 
 implementation
 
 uses
   LocatePorts;
 
-
-(* Assuming that the OS is Linux, walk the available serial ports looking for
-  a CP210x which is what's in the Mastech 2115B. Note that this is also used by
-  the DSO112A, so it's not entirely foolproof... if it were an FTDI chip it
-  could be branded with the device serial number (or model number etc.) as a
-  one-time operation which would make it more reliable.
-*)
-function FindMs2115bPort(portScan: boolean= false): string;
 
 const
   descriptionTemplate: TPortDescription= (
@@ -50,9 +47,31 @@ const
                          serial: '0001'        (* indicate non-constant serial number. *)
                        );
 
+
+(* Assuming that the OS is Linux, walk the available serial ports looking for
+  a CP210x which is what's in the Mastech 2115B. Note that this is also used by
+  the DSO112A, so it's not entirely foolproof... if it were an FTDI chip it
+  could be branded with the device serial number (or model number etc.) as a
+  one-time operation which would make it more reliable.
+*)
+function FindMs2115bPort(portScan: boolean= false): string;
+
 begin
   result := FindPortByDescription(descriptionTemplate)
 end { FindMs2115bPort } ;
+
+
+(* Similar to FindMs2115bPort() but returns all ports (rather than just one) as a
+  comma-separated list.
+*)
+function FindMs2115bPorts(portScan: boolean= false): string;
+
+begin
+  with FindPortsByDescription(descriptionTemplate) do begin
+    result := CommaText;
+    Free
+  end
+end { FindMs2115bPorts } ;
 
 
 end.

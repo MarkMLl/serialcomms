@@ -90,13 +90,11 @@ const
                          driverName: 'drivers/serial'
                        );
 
-var
-  allPorts: TStringList;
-
 begin
-  allPorts := FindPortsByDescription(descriptionTemplate);
-  result := allPorts.CommaText;
-  allPorts.Free
+  with FindPortsByDescription(descriptionTemplate) do begin
+    result := CommaText;
+    Free
+  end
 end { Find16550PortAll } ;
 
 

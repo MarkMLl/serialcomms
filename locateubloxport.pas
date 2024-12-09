@@ -20,17 +20,16 @@ uses
 *)
 function FindUbloxPort(generation: integer= 7; portScan: boolean= false): string;
 
+(* Similar to FindUbloxPort() but returns all ports (rather than just one) as a
+  comma-separated list.
+*)
+function FindUbloxPorts(generation: integer= 7; portScan: boolean= false): string;
+
 
 implementation
 
 uses
   LocatePorts;
-
-
-(* Assuming that the OS is Linux, walk the available serial ports looking for
-  a CDC serial device embedded in a U-Blox GPS receiver.
-*)
-function FindUbloxPort(generation: integer= 7; portScan: boolean= false): string;
 
 const
   descriptionTemplate: TPortDescription= (
@@ -51,6 +50,12 @@ const
 (* which was originally from Prusa. However while this appears to work with an  *)
 (* FTDI interface etc. it doesn't work with CDC-ACM.                            *)
 
+
+(* Assuming that the OS is Linux, walk the available serial ports looking for
+  a CDC serial device embedded in a U-Blox GPS receiver.
+*)
+function FindUbloxPort(generation: integer= 7; portScan: boolean= false): string;
+
 var
   description: TPortDescription;
 
@@ -66,6 +71,31 @@ begin
     end;
   result := FindPortByDescription(description)
 end { FindUbloxPort } ;
+
+
+(* Similar to FindUbloxPort() but returns all ports (rather than just one) as a
+  comma-separated list.
+*)
+function FindUbloxPorts(generation: integer= 7; portScan: boolean= false): string;
+
+var
+  description: TPortDescription;
+
+begin
+  description := descriptionTemplate;
+  with description do
+    case generation of
+      6: begin
+           idproduct := '01a6';
+           product := 'u-blox 6  -  GPS Receiver' (* Spaces actually get squashed *)
+         end
+    otherwise
+    end;
+  with FindPortsByDescription(description) do begin
+    result := CommaText;
+    Free
+  end
+end { FindUbloxPorts } ;
 
 
 end.

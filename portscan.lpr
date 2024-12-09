@@ -17,15 +17,18 @@ uses
 const
   debug= false;                         (* Blow-by-blow account to stderr       *)
 
+var
+  ports: string;
+
 begin
   LocatePortsDebug := debug;
 
-{  Write('Scanning for legacy 8250 device... ');
+  Write('Scanning for legacy 8250 device... ');
   if debug then
     WriteLn;
   WriteLn(Find8250Port());
   if debug then
-    DumpCachedPorts; }
+    DumpCachedPorts;
 
   Write('Scanning for all legacy 8250 devices... ');
   if debug then
@@ -34,19 +37,19 @@ begin
   if debug then
     DumpCachedPorts;
 
-{  Write('Scanning for PnP 16550 device... ');
+  Write('Scanning for PnP 16550 device... ');
   if debug then
     WriteLn;
   WriteLn(Find16550PortPnp());
   if debug then
-    DumpCachedPorts; }
+    DumpCachedPorts;
 
-{  Write('Scanning for PCI 16550 device... ');
+  Write('Scanning for PCI 16550 device... ');
   if debug then
     WriteLn;
   WriteLn(Find16550PortPci());
   if debug then
-    DumpCachedPorts; }
+    DumpCachedPorts;
 
   Write('Scanning for all 16550 devices... ');
   if debug then
@@ -55,67 +58,74 @@ begin
   if debug then
     DumpCachedPorts;
 
-{  Write('Scanning for unserialised FTDI device... ');
+  Write('Scanning for specific FTDI device... ');
   if debug then
     WriteLn;
-  WriteLn(FindFtdiPort(''));
+  WriteLn(FindFtdiPorts('AR0JLDEV'));
   if debug then
-    DumpCachedPorts; }
+    DumpCachedPorts;
 
-{  Write('Scanning for CDC serial device... ');
+  Write('Scanning for counterfeit FTDI devices... ');
   if debug then
     WriteLn;
-  WriteLn(FindFenrirPort());
+  WriteLn(FindFtdiPorts(''));
   if debug then
-    DumpCachedPorts; }
+    DumpCachedPorts;
 
-{  Write('Scanning for WCH CH34x device... ');
+  Write('Scanning for CDC serial devices... ');
   if debug then
     WriteLn;
-  WriteLn(FindJds6600Port());
+  WriteLn(FindCdcPorts());
   if debug then
-    DumpCachedPorts; }
+    DumpCachedPorts;
 
-{  Write('Scanning for Silicon Labs CP210x device... ');
+  Write('Scanning for WCH CH34x devices in JDS6600... ');
   if debug then
     WriteLn;
-  WriteLn(FindMs2115bPort());
+  WriteLn(FindJds6600Ports());
   if debug then
-    DumpCachedPorts; }
+    DumpCachedPorts;
 
-{  Write('Scanning for Silicon Labs CP210xN device... ');
+  Write('Scanning for Silicon Labs CP210x device in MS2115B... ');
   if debug then
     WriteLn;
-  WriteLn(FindContecPort());
+  WriteLn(FindMs2115bPorts());
   if debug then
-    DumpCachedPorts; }
+    DumpCachedPorts;
 
-{  Write('Scanning for Prolific PL2303 device... ');
+  Write('Scanning for Silicon Labs CP210xN device in Contec Pulse Oximeter... ');
   if debug then
     WriteLn;
-  WriteLn(FindPl2303Port(''));
+  WriteLn(FindContecPorts());
   if debug then
-    DumpCachedPorts; }
+    DumpCachedPorts;
 
-{  Write('Scanning for Generation 6 UBlox device... ');
+  Write('Scanning for Prolific PL2303 device... ');
   if debug then
     WriteLn;
-  WriteLn(FindUbloxPort(6));
+  WriteLn(FindPl2303Ports(''));
   if debug then
-    DumpCachedPorts; }
+    DumpCachedPorts;
 
-{  Write('Scanning for Generation 7 UBlox device... ');
+  Write('Scanning for Generation 6 UBlox device... ');
   if debug then
     WriteLn;
-  WriteLn(FindUbloxPort(7));
+  WriteLn(FindUbloxPorts(6));
   if debug then
-    DumpCachedPorts; }
+    DumpCachedPorts;
 
-{  Write('Scanning for Prologix/Fenrir HP-IB device... ');
+  Write('Scanning for Generation 7 UBlox device... ');
   if debug then
     WriteLn;
-  WriteLn(FindHpibPort());
+  WriteLn(FindUbloxPorts(7));
   if debug then
-    DumpCachedPorts }
+    DumpCachedPorts;
+
+  Write('Scanning for Prologix/Fenrir HP-IB device... ');
+  if debug then
+    WriteLn;
+  WriteLn(FindHpibPorts());
+  if debug then
+    DumpCachedPorts
 end.
 
